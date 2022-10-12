@@ -28,6 +28,10 @@
 #include "src/Vec3.h"
 #include "src/Camera.h"
 
+#include <map>
+#include<math.h>
+
+
 enum DisplayMode{ WIRE=0, SOLID=1, LIGHTED_WIRE=2, LIGHTED=3 };
 
 struct Triangle {
@@ -55,13 +59,14 @@ struct Voxel {
     Vec3 position = Vec3(0, 0, 0);
     Vec3 normale = Vec3(0, 0, 0);
     int compteur = 0;
-}
+};
 
 struct Grid {
     int resolution;
-    std::map <unsigned int, Voxel> vectR(pow(resolution, 3));
+    //int mapSize = pow(resolution, 3);
+    std::map <unsigned int, Voxel> representants;
 
-}
+};
 
 struct Mesh {
     std::vector< Vec3 > vertices; //array of mesh vertices positions
@@ -208,8 +213,33 @@ struct Mesh {
     //on parcourt toute la forme et on garde le xmin, le ymax et le zmin : boite englobante de l'objet, en bas à gauche on aura BBMin(xmin, ymin, zmin) - (epsilon, epsilon, epsilon) (pour éviter les imprécisions) et BBMax(xmax, ymax, zmax) + (epsilon, epsilon, epsilon)
     //simplify : on fait une grille, on prend un nb de voxels qu'on veut mettre nx*ny*nz eléments dans notre tableau (liste de représentants), on veit savoir dans quelle cellule tombe un sommet pour chaque (x, y, z) -> (i, j, k) -> liste représentants
 
+    float xmin, xmax, ymin, ymax, zmin, zmax;
+
+    void setMinX (float value) {
+        xmin = value;
+    }
+
+    void setMinY(float value) {
+        ymin = value;
+    }
+
+    void setMinZ (float value) {
+        zmin = value;
+    }
+
+    /*void setMaxX (float value) {
+        xmax = value;
+    }
+
+    void setMaxY (float value) {
+        ymax = value;
+    }
+
+    void setMaxZ (float value) {
+        zmax = value;
+    }*/
+
     std::vector<Vec3> calculBoiteEnglobante () {
-        float xmin, xmax, ymin, ymax, zmin, zmax;
         float epsilon = 0.05;
 
         xmin = FLT_MAX;
@@ -245,6 +275,10 @@ struct Mesh {
 
         }
 
+        setMinX(xmin);
+        setMinY(ymin);
+        setMinZ(zmin);
+
         Vec3 Min1, Min2, Min3, Min4, Max1, Max2, Max3, Max4;
         Min1 = Vec3(xmin, ymin, zmin);
         Min2 = Vec3(xmax, ymin, zmin);
@@ -271,27 +305,43 @@ struct Mesh {
         return boite;
     }
 
-    int getMinX {
-        std::vector<Vec3> boite = calculBoiteEnglobante();
-        //return boite[]
-    }
-
-    Grid grid;
-    grid.resolution = 4;
-
-    int getGridIndex(int i, int j, int k) {
+    int getGridIndex(Grid grid, int i, int j, int k) {
         return (i + j*grid.resolution/*(nx)*/ + k*grid.resolution/*(nx)*/ *grid.resolution/*(ny)*/);
     }
 
-    int getIndex(float x, float y, float z) {
-        int i = 0, j = 0, k = 0;
-        for (int elt = 0; elt < vertices.size(); elt++) {
-            i = (int) ((x-minx)/grid.resolution/*(nx)*/)
-        }
+    int getIndex(Grid grid, float x, float y, float z) {
+        int i = (int) ((x-xmin)/grid.resolution/*(nx)*/);
+        int j = (int) ((y-ymin)/grid.resolution/*(ny)*/);
+        int k = (int) ((z-zmin)/grid.resolution/*(nz)*/);
+
+        int gridIndex = this->getGridIndex(grid, i, j, k);
+        
+        return gridIndex;
     }
 
-    void simplify() {
+    void simplify(Grid grid) {
+        int idG, idGV0, idGV1, idGV2;
+        for (int vi = 0; vi < vertices.size(); vi++) {
+            idG = this->getIndex(grid, vertices[vi][0], vertices[vi][1], vertices[vi][2]);
+            grid.representants[idG].position += vertices[vi];
+            grid.representants[idG].normale += normals[vi];
+            grid.representants[idG].compteur++;
+        }
 
+        for (int ti = 0; ti < triangles.size(); ti++) {
+            idGV0 = this->getIndex(grid, vertices[triangles[ti][0]][0], vertices[triangles[ti][0]][1], vertices[triangles[ti][0]][2]);
+            vertices[triangles[ti][0]] = grid.representants[idGV0].position;
+
+            idGV1 = this->getIndex(grid, vertices[triangles[ti][1]][0], vertices[triangles[ti][1]][1], vertices[triangles[ti][1]][2]);
+            vertices[triangles[ti][1]] = grid.representants[idGV1].position;
+
+            idGV2 = this->getIndex(grid, vertices[triangles[ti][2]][0], vertices[triangles[ti][2]][1], vertices[triangles[ti][2]][2]);
+            vertices[triangles[ti][2]] = grid.representants[idGV2].position;
+            
+            if (!(grid.representants[idGV0].position == grid.representants[idGV1].position) && !(grid.representants[idGV0].position == grid.representants[idGV2].position)) {
+                triangles[ti] = Triangle(idGV0, idGV1, idGV2);
+            }
+        }
     }
 
 };
@@ -391,6 +441,7 @@ float max_valence (std::vector<unsigned int> i_valence) {
 //Input mesh loaded at the launch of the application
 Mesh mesh;
 std::vector< float > mesh_valence_field; //normalized valence of each vertex
+Grid grid;
 
 Basis basis;
 
@@ -798,7 +849,6 @@ void draw () {
     }
 
 
-
 }
 
 void changeDisplayMode(){
@@ -979,6 +1029,9 @@ int main (int argc, char ** argv) {
     for (long unsigned int i = 0; i < valences.size(); i++) {
         mesh_valence_field[i] = (valences[i]-minvalence)/(maxvalence-minvalence);
     }*/
+
+    grid.resolution = 16;
+    mesh.simplify(grid);
 
     glutMainLoop ();
     return EXIT_SUCCESS;

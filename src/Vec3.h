@@ -22,6 +22,15 @@ public:
     void operator = (Vec3 const & other) {
        mVals[0] = other[0] ; mVals[1] = other[1]; mVals[2] = other[2];
     }
+
+    //Ajout comparaison
+    bool operator == (Vec3 const & other) {
+        if (mVals[0] == other[0] && mVals[1] == other[1] && mVals[2] == other[2]) {
+            return true;
+        }
+        return false;
+    }
+
     float squareLength() const {
        return mVals[0]*mVals[0] + mVals[1]*mVals[1] + mVals[2]*mVals[2];
     }
