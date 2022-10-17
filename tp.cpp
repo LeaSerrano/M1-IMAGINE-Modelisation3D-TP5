@@ -59,12 +59,15 @@ struct Voxel {
     Vec3 position = Vec3(0, 0, 0);
     Vec3 normale = Vec3(0, 0, 0);
     int compteur = 0;
+    int idR;
 };
 
 struct Grid {
     int resolution;
     //int mapSize = pow(resolution, 3);
     std::map <unsigned int, Voxel> representants;
+
+    
 
 };
 
@@ -73,6 +76,8 @@ struct Mesh {
     std::vector< Vec3 > normals; //array of vertices normals useful for the display
     std::vector< Triangle > triangles; //array of mesh triangles
     std::vector< Vec3 > triangle_normals; //triangle normals to display face normals
+
+    Vec3 vecMin, vecMax;
 
     //Compute face normals for the display
     void computeTrianglesNormals(){
@@ -213,34 +218,8 @@ struct Mesh {
     //on parcourt toute la forme et on garde le xmin, le ymax et le zmin : boite englobante de l'objet, en bas à gauche on aura BBMin(xmin, ymin, zmin) - (epsilon, epsilon, epsilon) (pour éviter les imprécisions) et BBMax(xmax, ymax, zmax) + (epsilon, epsilon, epsilon)
     //simplify : on fait une grille, on prend un nb de voxels qu'on veut mettre nx*ny*nz eléments dans notre tableau (liste de représentants), on veut savoir dans quelle cellule tombe un sommet pour chaque (x, y, z) -> (i, j, k) -> liste représentants
 
-    float xmin, xmax, ymin, ymax, zmin, zmax;
-
-    void setMinX (float value) {
-        xmin = value;
-    }
-
-    void setMinY(float value) {
-        ymin = value;
-    }
-
-    void setMinZ (float value) {
-        zmin = value;
-    }
-
-    void setMaxX (float value) {
-        xmax = value;
-    }
-
-    void setMaxY(float value) {
-        ymax = value;
-    }
-
-    void setMaxZ (float value) {
-        zmax = value;
-    }
-
     void calculBoiteEnglobante () {
-        float epsilon = 0.05;
+        float xmin, xmax, ymin, ymax, zmin, zmax, epsilon = 0.05;
 
         xmin = FLT_MAX;
         xmax = -FLT_MAX;
@@ -275,99 +254,78 @@ struct Mesh {
 
         }
 
-        setMinX(xmin);
-        setMinY(ymin);
-        setMinZ(zmin);
-        setMaxX(xmax);
-        setMaxY(ymax);
-        setMaxZ(zmax);
-
-    }
-
-    std::vector<Vec3> affichageBoiteEnglobante () {
-        calculBoiteEnglobante();
-
-        Vec3 Min1, Min2, Min3, Min4, Max1, Max2, Max3, Max4;
-        Min1 = Vec3(xmin, ymin, zmin);
-        Min2 = Vec3(xmax, ymin, zmin);
-        Min3 = Vec3(xmax, ymin, zmax);
-        Min4 = Vec3(xmin, ymin, zmax);
-
-        Max1 = Vec3(xmax, ymax, zmax);
-        Max2 = Vec3(xmax, ymax, zmin);
-        Max3 = Vec3(xmin, ymax, zmin);
-        Max4 = Vec3(xmin, ymax, zmax);
-
-        std::vector<Vec3> boite;
-        boite.clear();
-
-        boite.push_back(Min1);
-        boite.push_back(Min2);
-        boite.push_back(Min3);
-        boite.push_back(Min4);
-        boite.push_back(Max3);
-        boite.push_back(Max2);
-        boite.push_back(Max1);
-        boite.push_back(Max4);
-
-        return boite;
+        vecMin = Vec3(xmin, ymin, zmin);
+        vecMax = Vec3(xmax, ymax, zmax);        
     }
 
     int getGridIndex(Grid grid, int i, int j, int k) {
-        return (i + j*grid.resolution/*(nx)*/ + k*grid.resolution/*(nx)*/ *grid.resolution/*(ny)*/);
+        int gridIndex = i + j*grid.resolution/*(nx)*/ + k*grid.resolution/*(nx)*/ *grid.resolution/*(ny)*/;
+        return gridIndex;
     }
 
     int getIndex(Grid grid, float x, float y, float z) {
         calculBoiteEnglobante();
 
-        float dx = (xmax-xmin)/grid.resolution/*(nx)*/;
-        float dy = (ymax-ymin)/grid.resolution/*(ny)*/;
-        float dz = (zmax-zmin)/grid.resolution/*(nz)*/;
+        float dx = (vecMax[0]-vecMin[0])/grid.resolution/*(nx)*/;
+        float dy = (vecMax[1]-vecMin[1])/grid.resolution/*(ny)*/;
+        float dz = (vecMax[2]-vecMin[2])/grid.resolution/*(nz)*/;
 
-        int i = round((x-xmin)/dx);
-        std::cout << x << " " << xmin << " " << dx << " " << i << std::endl;
-        int j = round((y-ymin)/dy);
-        int k = round((z-zmin)/dz);
+        int i = (int)((x-vecMin[0])/dx);
+        int j = (int)((y-vecMin[1])/dy);
+        int k = (int)((z-vecMin[2])/dz);
 
-        int gridIndex = this->getGridIndex(grid, i, j, k);
-        
-        return gridIndex;
+        return this->getGridIndex(grid, i, j, k);
     }
 
     void simplify(Grid grid) {
         int idG, idGV0, idGV1, idGV2;
+        std::vector<int> idViToIdg(vertices.size());
+        std::vector<Vec3> correspondanceRepresentant2(vertices.size());
+
+        std::vector< Triangle > simplifiedTriangles(triangles.size());
+        std::vector< Vec3 > simplifiedVertices(vertices.size());
+        std::vector< Vec3 > simplifiedNormals(normals.size());
+
         for (int vi = 0; vi < vertices.size(); vi++) {
             idG = this->getIndex(grid, vertices[vi][0], vertices[vi][1], vertices[vi][2]);
+
             grid.representants[idG].position += vertices[vi];
-            grid.representants[idG].normale += normals[vi];
+            //grid.representants[idG].normale += normals[vi];
             grid.representants[idG].compteur++;
+
+            idViToIdg[vi] = idG;
         }
 
-        for (int elt = 0; elt < grid.representants.size(); elt++) {
-            grid.representants[elt].position /= grid.representants[elt].compteur;
-            grid.representants[elt].normale.normalize();
+        for (int vi = 0; vi < grid.representants.size(); vi++) {
+            if (grid.representants[vi].compteur > 0) {
+                grid.representants[vi].position /= grid.representants[vi].compteur;
+                grid.representants[idG].normale /= grid.representants[idG].compteur;
+
+                //simplifiedNormals.push_back(grid.representants[vi].normale);
+                simplifiedVertices.push_back(grid.representants[vi].position);
+                grid.representants[vi].idR = simplifiedVertices.size()-1;
+            }
         }
 
         for (int ti = 0; ti < triangles.size(); ti++) {
-            idGV0 = this->getIndex(grid, vertices[triangles[ti][0]][0], vertices[triangles[ti][0]][1], vertices[triangles[ti][0]][2]);
-            idGV1 = this->getIndex(grid, vertices[triangles[ti][1]][0], vertices[triangles[ti][1]][1], vertices[triangles[ti][1]][2]);
-            idGV2 = this->getIndex(grid, vertices[triangles[ti][2]][0], vertices[triangles[ti][2]][1], vertices[triangles[ti][2]][2]);
 
+            idGV0 = idViToIdg[triangles[ti][0]];
+            idGV1 = idViToIdg[triangles[ti][1]];
+            idGV2 = idViToIdg[triangles[ti][2]];
 
-            if (!grid.representants[idGV0].position.sameAs(grid.representants[idGV1].position) && !grid.representants[idGV0].position.sameAs(grid.representants[idGV2].position)) {
-            
-                vertices[triangles[ti][0]] = grid.representants[idGV0].position;
-                vertices[triangles[ti][1]] = grid.representants[idGV1].position;
-                vertices[triangles[ti][2]] = grid.representants[idGV2].position;
+            if (idGV0 != idGV1 && idGV0!=idGV2 && idGV1!=idGV2) {
                 
-                triangles[ti] = Triangle(idGV0, idGV1, idGV2);
-            }
-            else {
-                triangles[ti] = Triangle(0, 0, 0);
+                int vec0 = grid.representants[idViToIdg[triangles[ti][0]]].idR;
+                int vec1 = grid.representants[idViToIdg[triangles[ti][1]]].idR;
+                int vec2 = grid.representants[idViToIdg[triangles[ti][2]]].idR;
+                
+                simplifiedTriangles.push_back(Triangle(vec0, vec1, vec2));
             }
         }
 
-
+        triangles = simplifiedTriangles;
+        vertices = simplifiedVertices;
+        //normals = simplifiedNormals;
     }
 
 };
@@ -477,6 +435,8 @@ bool display_mesh;
 bool display_basis;
 DisplayMode displayMode;
 int weight_type;
+//
+bool display_simplify;
 
 // -------------------------------------------
 // OpenGL/GLUT application code.
@@ -650,6 +610,8 @@ void init () {
     display_smooth_normals = true;
     displayMode = LIGHTED;
     display_basis = false;
+    //
+    display_simplify = false;
 }
 
 
@@ -800,10 +762,41 @@ void drawNormals(Mesh const& i_mesh){
     }
 }
 
+//
+void drawBox() {
+
+    mesh.calculBoiteEnglobante();
+
+    Vec3 Min1, Min2, Min3, Min4, Max1, Max2, Max3, Max4;
+        Min1 = Vec3(mesh.vecMin[0], mesh.vecMin[1], mesh.vecMin[2]);
+        Min2 = Vec3(mesh.vecMax[0], mesh.vecMin[1], mesh.vecMin[2]);
+        Min3 = Vec3(mesh.vecMax[0], mesh.vecMin[1], mesh.vecMax[2]);
+        Min4 = Vec3(mesh.vecMin[0], mesh.vecMin[1], mesh.vecMax[2]);
+
+        Max1 = Vec3(mesh.vecMax[0], mesh.vecMax[1], mesh.vecMax[2]);
+        Max2 = Vec3(mesh.vecMax[0], mesh.vecMax[1], mesh.vecMin[2]);
+        Max3 = Vec3(mesh.vecMin[0], mesh.vecMax[1], mesh.vecMin[2]);
+        Max4 = Vec3(mesh.vecMin[0], mesh.vecMax[1], mesh.vecMax[2]);
+
+        drawVector(Min1, Min2);
+        drawVector(Min2, Min3);
+        drawVector(Min3, Min4);
+        drawVector(Min4, Min1);
+
+        drawVector(Min1, Max3);
+        drawVector(Min2, Max2);
+        drawVector(Min3, Max1);
+        drawVector(Min4, Max4);
+
+        drawVector(Max1, Max2);
+        drawVector(Max2, Max3);
+        drawVector(Max3, Max4);
+        drawVector(Max4, Max1);
+
+}
+
 //Draw fonction
 void draw () {
-
-
 
     if(displayMode == LIGHTED || displayMode == LIGHTED_WIRE){
 
@@ -823,6 +816,8 @@ void draw () {
 
     glColor3f(0.8,1,0.8);
     drawMesh(mesh, true);
+
+    drawBox();
 
     if(displayMode == SOLID || displayMode == LIGHTED_WIRE){
         glEnable (GL_POLYGON_OFFSET_LINE);
@@ -849,30 +844,6 @@ void draw () {
         drawReferenceFrame(basis);
     }
     glEnable(GL_LIGHTING);
-
-    std::vector<Vec3> boite = mesh.affichageBoiteEnglobante();
-
-    for (int i = 0; i < 4; i++) {
-        if (i < 3) {
-            drawVector(boite[i], boite[i+1]);
-        }
-        else {
-            drawVector(boite[i], boite[0]);
-        }
-    }
-
-    for (int i = 4; i < 8; i++) {
-        if (i < 7) {
-            drawVector(boite[i], boite[i+1]);
-        }
-        else {
-            drawVector(boite[i], boite[4]);
-        }
-    }
-
-    for (int i = 0; i < 4; i++) {
-        drawVector(boite[i], boite[i+4]);
-    }
 
 }
 
@@ -936,6 +907,15 @@ void key (unsigned char keyPressed, int x, int y) {
 
     case 's': //Switches between face normals and vertices normals
         display_smooth_normals = !display_smooth_normals;
+        break;
+
+    case 'a' : 
+        if (!display_simplify) {
+            display_simplify = true;
+            grid.resolution = 64;
+            mesh.simplify(grid);
+            mesh.computeNormals(weight_type);
+        }
         break;
 
     case '+': //Changes weight type: 0 uniforme, 1 aire des triangles, 2 angle du triangle
@@ -1054,10 +1034,6 @@ int main (int argc, char ** argv) {
     for (long unsigned int i = 0; i < valences.size(); i++) {
         mesh_valence_field[i] = (valences[i]-minvalence)/(maxvalence-minvalence);
     }*/
-
-    grid.resolution = 16;
-    mesh.simplify(grid);
-
 
     glutMainLoop ();
     return EXIT_SUCCESS;

@@ -25,7 +25,7 @@ public:
 
     //Ajout comparaison
     bool sameAs (Vec3 const & other) {
-        if (mVals[0] == other[0] && mVals[1] == other[1] && mVals[2] == other[2]) {
+        if (mVals[0] == other[0] || mVals[1] == other[1] || mVals[2] == other[2]) {
             return true;
         }
         return false;
